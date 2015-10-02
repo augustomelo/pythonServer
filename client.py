@@ -10,68 +10,144 @@ Authors:
 import sys
 import socket
 
-REQUEST = "GET "
-PROTOCOL = "HTTP/1.1.\nHost: "
+GET = "GET "
+PROTOCOL = "HTTP/1.1.\r\nHost: "
+C_TYPE = "\r\nContent-Type: application/x-www-form-urlencoded\r\n"
+C_LENGTH = "Content-Length: "
 PORT = 80
 
 BUFFER = 10000
 
-def makeRequisition(url):
+
+# Example /grafo3/vertice1-vertice2?peso=10
+def makeRequest(url, method):
     """
-    Make the request that will be send to the server.
+    Make a request using the method typed by the user.
+
+    Args:
+        url: Url typed by the user.
+        method: POST, PUT or DELETE method.
+
+    Return:
+        request: A vector following the pattern;
+            [0] => request.
+            [1] => location.
+            [2] => protocol.
+            [3] => host.
+            [4] => content-type.
+            [5] => content-length.
+            [6] => body
+            [7] => \r\n\r\n.
+            [8] => port.
+    """
+    request = []
+
+    request.append(method + ' ')
+
+    qMark = url.find('?')
+
+    indSlash = url.find('/')
+
+    # Does the requet has a place?
+    if (indSlash != -1):
+        # Location.
+        request.append(url[indSlash:qMark] + ' ')
+        request.append(PROTOCOL)
+        # Host
+        request.append(url[:indSlash])
+
+    else:
+        # No, append root to the request.
+        indSlash = len(url)
+        # Location.
+        request.append('/ ')
+        request.append(PROTOCOL)
+        # Host.
+        request.append(url)
+
+    # Append the content-type
+    request.append(C_TYPE)
+
+    # Append the content-length
+    request.append(C_LENGTH + str(len(url[qMark+1:])) + '\r\n\r\n')
+
+    # Append the message
+    request.append(url[qMark+1:])
+
+    # Append the \n\n
+    request.append('\r\n\r\n')
+    
+    # Port.
+    request.append(None)
+
+    #Look for a localhost request.
+    indLH = url.find(':')
+    
+    if (indLH != -1):
+        # Update host.
+        request[3] = url[:indLH]
+        # Update port.
+        request[-1] = int(url[(indLH+1):indSlash])
+
+    return request
+
+
+
+def makeGETRequest(url):
+    """
+    Make the GET request.
 
     Args:
         url: Url typed by the user.
 
     Return:
-        request: A dictionarie following the pattern;
+        request: A vector following the pattern;
             [0] => request.
             [1] => location.
             [2] => protocol.
             [3] => host.
-            [4] => \n\n.
+            [4] => \r\n\r\n.
             [5] => port.
     """
     request = []
 
-    request.append(REQUEST)
+    request.append(GET)
 
     #Look for the location request.
-    indGet = sys.argv[1].find('/')
+    indGet = url.find('/')
    
     # Does the requet has a place?
     if (indGet != -1):
         # Location.
-        request.append(sys.argv[1][indGet:] + ' ')
+        request.append(url[indGet:] + ' ')
         request.append(PROTOCOL)
         # Host
-        request.append(sys.argv[1][:indGet])
+        request.append(url[:indGet])
 
     else:
         # No, append root to the request.
-        indGet = len(sys.argv[1])
+        indGet = len(url)
         # Location.
         request.append('/ ')
         request.append(PROTOCOL)
         # Host.
-        request.append(sys.argv[1])
+        request.append(url)
 
     # Append the \n\n
-    request.append('\n\n')
+    request.append('\r\n\r\n')
     # Port.
     request.append(None)
 
     #Look for a localhost request.
-    indLH = sys.argv[1].find(':')
+    indLH = url.find(':')
     
     if (indLH != -1):
         # Update host.
-        request[3] = sys.argv[1][:indLH]
+        request[3] = url[:indLH]
         # Update port.
-        request[-1] = int(sys.argv[1][(indLH+1):indGet])
+        request[-1] = int(url[(indLH+1):indGet])
 
     return request
-
 
 def main():
     # Verify the number of arguments.
@@ -82,8 +158,15 @@ def main():
     # Create a inet, and sterming socket.   
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
+    sock.settimeout(5)
+
     # Create request.
-    req = makeRequisition(sys.argv[1])
+    if (len(sys.argv) == 3):
+        req = makeRequest(sys.argv[1], sys.argv[2])
+    else:
+        req = makeGETRequest(sys.argv[1])
+        
+
 
     # The port was set?
     if(req[-1] is None):
@@ -95,9 +178,17 @@ def main():
     
     request = ''.join(req[:-1])
 
-    request = request + "\n\n"
 
-    sock.connect((req[3], port))
+    # VERIFY REQUEST
+    print(request)
+
+    try:
+        sock.connect((req[3], port))
+
+    except socket.timeout:
+        print("It was not possible to connect to '" + req[3] + "' in the given time, verify the host name and try again.\nExiting.") 
+        sys.exit(0)
+
     sock.send(request.encode())
     resp = sock.recv(BUFFER)
 

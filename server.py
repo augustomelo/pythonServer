@@ -104,11 +104,19 @@ def main():
         # [1] => File requisitation.
         # [2] => HTTP version.
         # ...
-        client = client.split(' ')
+        fullrequest = client.split('\r\n')
+
+        fullrequest = list(filter(None, fullrequest))
+
+        fullrequest = fullrequest[0].split(' ') + fullrequest[1:]
 
         if (client[0] == 'GET'):
             # Send response.
             verifyRequest(conn, CUR_DIR + client[1])
+        
+
+        else:
+            print(client)
 
         conn.close()
 
