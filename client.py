@@ -18,7 +18,8 @@ PORT = 80
 
 BUFFER = 10000
 
-
+# Example /grafo3
+# Example /grafo3/vertice1-vertice2
 # Example /grafo3/vertice1-vertice2?peso=10
 def makeRequest(url, method):
     """
@@ -72,7 +73,11 @@ def makeRequest(url, method):
     request.append(C_LENGTH + str(len(url[qMark+1:])) + '\r\n\r\n')
 
     # Append the message
-    request.append(url[qMark+1:])
+    if(qMark == -1):
+        request.append('NULL')
+
+    else:
+        request.append(url[qMark+1:])
 
     # Append the \n\n
     request.append('\r\n\r\n')
@@ -165,8 +170,6 @@ def main():
         req = makeRequest(sys.argv[1], sys.argv[2])
     else:
         req = makeGETRequest(sys.argv[1])
-        
-
 
     # The port was set?
     if(req[-1] is None):
