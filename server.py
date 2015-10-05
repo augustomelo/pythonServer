@@ -10,8 +10,9 @@ Authors:
 import socket
 import sys
 import os.path 
+import json
+from collections import OrderedDict
 
-CUR_DIR = '.'
 
 HOST = '127.0.0.1'
 PORT = 0
@@ -23,6 +24,8 @@ NOT_FOUND404 = "notfound404.html"
 
 HTTP200 = "\nHTTP/1.1 200 OK\n"
 HTTP404 = "\nHTTP/1.1 404 Not Found\n"
+HTTP201 = "\nHTTP/1.1 201 Created\n"
+HTTP204 = "\nHTTP/1.1 204 No Content\n"
 CONTENTTYPE = "Content-Type: text/html\n\n" 
 
 def sendFile(conn, filePath):
@@ -30,8 +33,8 @@ def sendFile(conn, filePath):
     Send a file trought the socket.
     
     Args:
-        conn: Socket connection
-        filePath: The file requested
+        conn: Socket connection.
+        filePath: The file requested.
     Raises:
         IOErros: Problem using the file.
     """
@@ -49,17 +52,16 @@ def sendFile(conn, filePath):
         print("Problem during the IO processing.", format(err))
 
 
-def verifyRequest(conn, filePath):
+def GETRequest(conn, filePath):
     """
-    Verify request made by the client.
+    Send a response to a GET request.
     
     Args:
-        conn: Socket connection
-        filePath: The file requested
+        conn: Socket connection.
+        filePath: The file requested.
     """
     if (not(os.path.isfile(filePath))):
         # Try to find default html page.
-        print(filePath)
         filePath += DEFAULT_HTML
         if (not(os.path.isfile(filePath))):
             # Send http 404
@@ -76,6 +78,74 @@ def verifyRequest(conn, filePath):
 
     sendFile(conn, filePath)
 
+def createOrEdit(graph, edges, value, dic):
+    """
+        Send a response to a POST request.
+
+        Args:
+        graph: Graph that the client is trying to create or edit.
+        edges: Edges that the client is trying to create or edit.
+        value: Value that the client is trying to create or edit.
+        dic: A dictionary with resorces and values.
+
+        Return
+            A boolean indication it is an attribute that already exist or not.
+    """
+    if (graph not in dic):
+        return True
+
+    if ((value != 'NULL') and (value not in dic[graph]['pesos'])):
+        return True
+
+    for edge in edges:
+        if (edge not in dic[graph]['arestas']):
+            return True
+
+    return False
+
+
+def POSTRequest(conn, resource, values, dic):
+    """
+    Send a response to a POST request.
+
+    Args:
+       conn: Socket connection. 
+       resource: What the client is trying to reach.
+       values: The value that the client wants to insert.
+       dic: A dictionary with resorces and values.
+    """
+    
+    resource = resource.split('/')
+    resource = resource[1:]
+
+    graph = resource[0]
+    
+    if (values != 'NULL'):
+        values = values.split('=')
+
+    create = createOrEdit(graph, resource, values, dic)
+
+    if(create):
+        dic[graph] = {}
+        dic[graph]['arestas'] = []
+        dic[graph]['pesos'] = {}
+
+    for edge in resource[1:]:
+        dic[graph]['arestas'].append(edge)
+
+    # Is there values to be add?
+    if (values != 'NULL'):
+        if (len(values) == 2):
+            dic[graph]['pesos'][values[0]] = values[1]
+        else:
+            conn.sendall(HTTP204.encode())
+            return
+
+    if (create):
+        conn.sendall(HTTP201.encode())
+
+    else:
+        conn.sendall(HTTP200.encode())
 
 def main():
     # Verify the number of arguments.
@@ -84,6 +154,8 @@ def main():
         return 1
 
     PORT = int(sys.argv[1])
+    CUR_DIR  = '.' if(len(sys.argv) == 2) else sys.argv[2]
+    dic = OrderedDict()
 
     print("Starting server on: " + str(PORT) + ".")
     
@@ -105,21 +177,25 @@ def main():
         # [2] => HTTP version.
         # ...
         fullrequest = client.split('\r\n')
-
         fullrequest = list(filter(None, fullrequest))
-
         fullrequest = fullrequest[0].split(' ') + fullrequest[1:]
+        print(fullrequest)
 
-        if (client[0] == 'GET'):
-            # Send response.
-            verifyRequest(conn, CUR_DIR + client[1])
-        
+        if (fullrequest[0] == 'GET'):
+            GETRequest(conn, CUR_DIR + fullrequest[1])
 
-        else:
-            print(client)
+        elif (fullrequest[0] == 'POST'):
+            POSTRequest(conn, fullrequest[1], fullrequest[-1], dic)
+            print(json.dumps(dic))
+
+        #elif (fullrequest[0] == 'PUT'):
+
+        #elif (fullrequest[0] == 'DELETE'):
 
         conn.close()
 
 
 if __name__ == "__main__":
     main()
+
+
