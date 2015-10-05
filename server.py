@@ -24,6 +24,7 @@ HTTP200 = "\nHTTP/1.1 200 OK\n"
 HTTP201 = "\nHTTP/1.1 201 Created\n"
 HTTP204 = "\nHTTP/1.1 204 No Content\n"
 HTTP404 = "\nHTTP/1.1 404 Not Found\n"
+HTTP400 = "\nHTTP/1.1 400 Bad Request\n"
 CONTENTTYPE = "Content-Type: text/html\n\n" 
 
 def sendFile(conn, filePath):
@@ -79,7 +80,7 @@ def GETRequest(conn, filePath):
 
 def POSTRequest(conn, resource, values, dic):
     """
-    Send a response to a POST request.
+    Send a response to a POST request. Create the resource.
 
     Args:
        conn: Socket connection. 
@@ -90,39 +91,81 @@ def POSTRequest(conn, resource, values, dic):
     create = False 
     resource = resource.split('/')
     resource = resource[1:]
-
     graph = resource[0]
-    
-    if (values != 'NULL'):
+    edge = resource[-1].find('-')
+   
+    # Insert an empty edge or with weigth in a graph that
+    # already exists.
+    if ((graph in dic) and ((values != 'NULL') or (edge != -1))):
         values = values.split('=')
         values[0] = resource[-1]
 
         if (len(values) == 2):
-            if (values[0] not in dic[graph]['pesos']):
+            if (values[0] not in dic[graph]['pesos'] or dic[graph]['pesos'][values[0]] == ""):
                 create = True
-            dic[graph]['pesos'][values[0]] = values[1]
+                dic[graph]['pesos'][values[0]] = values[1]
+
+        elif (edge not in dic[graph]['pesos']):
+            create = True 
+            dic[graph]['pesos'][values[0]] = ""
 
         else:
-            conn.sendall(HTTP204.encode())
+            conn.sendall(HTTP400.encode())
             return
-    
+   
+    # Creat an empty graph of with one vertex.
     else:
-        if(graph not in dic):
-            dic[graph] = {}
-            dic[graph]['arestas'] = []
-            dic[graph]['pesos'] = {}
-            create = True
-
-        for edge in resource[1:]:
-            if (edge not in dic[graph]['arestas']):
+        if (edge == -1):
+            if(graph not in dic):
+                dic[graph] = {}
+                dic[graph]['arestas'] = []
+                dic[graph]['pesos'] = {}
                 create = True
-            dic[graph]['arestas'].append(edge)
+        
+            for edge in resource[1:]:
+                if (edge not in dic[graph]['arestas']):
+                    create = True
+                    dic[graph]['arestas'].append(edge)
 
     if (create):
         conn.sendall(HTTP201.encode())
 
     else:
+        conn.sendall(HTTP400.encode())
+
+def PUTRequest(conn, resource, values, dic):
+    """
+    Send a response to a PUT request. Edit the resource.
+
+    Args:
+       conn: Socket connection. 
+       resource: What the client is trying to reach.
+       values: The value that the client wants to insert.
+       dic: A dictionary with resorces and values.
+    """
+    create = True 
+    resource = resource.split('/')
+    resource = resource[1:]
+    graph = resource[0]
+
+    if ((values != 'NULL')):
+        values = values.split('=')
+        values[0] = resource[-1]
+
+        if (len(values) == 2):
+            if (values[0] in dic[graph]['pesos'] or dic[graph]['pesos'][values[0]] == ""):
+                create = False
+                dic[graph]['pesos'][values[0]] = values[1]
+
+        else:
+            conn.sendall(HTTP400.encode())
+            return
+    
+    if (not create):
         conn.sendall(HTTP200.encode())
+
+    else:
+        conn.sendall(HTTP400.encode())
 
 def removeAllOccurence(graph, edge, dic):
     """
@@ -150,12 +193,17 @@ def DELETERequest(conn, resource, dic):
     resource = resource[1:]
     graph = resource[0]
 
-    # Remove the edge and all its weigth.
     if(len(resource) == 2):
+        # Remove the edge and all its weigth.
         if(resource[1] in dic[graph]['arestas']):
             index = dic[graph]['arestas'].index(resource[1])
             del(dic[graph]['arestas'][index])
             removeAllOccurence(graph, resource[1], dic)
+            conn.sendall(HTTP200.encode())
+
+        # Remove just the weigth.
+        if (resource[1] in dic[graph]['pesos']):
+            del(dic[graph]['pesos'][resource[1]])
             conn.sendall(HTTP200.encode())
 
         else:
@@ -211,8 +259,11 @@ def main():
         if (fullrequest[0] == 'GET'):
             GETRequest(conn, CUR_DIR + fullrequest[1])
 
-        elif (fullrequest[0] == 'POST' or fullrequest[0] == 'PUT'):
+        elif (fullrequest[0] == 'POST'):
             POSTRequest(conn, fullrequest[1], fullrequest[-1], dic)
+
+        elif (fullrequest[0] == 'PUT'):
+            PUTRequest(conn, fullrequest[1], fullrequest[-1], dic)
 
         elif (fullrequest[0] == 'DELETE'):
             DELETERequest(conn, fullrequest[1], dic)
