@@ -11,8 +11,6 @@ import socket
 import sys
 import os.path 
 import json
-from collections import OrderedDict
-
 
 HOST = '127.0.0.1'
 PORT = 0
@@ -23,9 +21,9 @@ DEFAULT_HTML = "/index.html"
 NOT_FOUND404 = "notfound404.html"
 
 HTTP200 = "\nHTTP/1.1 200 OK\n"
-HTTP404 = "\nHTTP/1.1 404 Not Found\n"
 HTTP201 = "\nHTTP/1.1 201 Created\n"
 HTTP204 = "\nHTTP/1.1 204 No Content\n"
+HTTP404 = "\nHTTP/1.1 404 Not Found\n"
 CONTENTTYPE = "Content-Type: text/html\n\n" 
 
 def sendFile(conn, filePath):
@@ -78,31 +76,6 @@ def GETRequest(conn, filePath):
 
     sendFile(conn, filePath)
 
-def createOrEdit(graph, edges, value, dic):
-    """
-        Send a response to a POST request.
-
-        Args:
-        graph: Graph that the client is trying to create or edit.
-        edges: Edges that the client is trying to create or edit.
-        value: Value that the client is trying to create or edit.
-        dic: A dictionary with resorces and values.
-
-        Return
-            A boolean indication it is an attribute that already exist or not.
-    """
-    if (graph not in dic):
-        return True
-
-    if ((value != 'NULL') and (value not in dic[graph]['pesos'])):
-        return True
-
-    for edge in edges:
-        if (edge not in dic[graph]['arestas']):
-            return True
-
-    return False
-
 
 def POSTRequest(conn, resource, values, dic):
     """
@@ -114,7 +87,7 @@ def POSTRequest(conn, resource, values, dic):
        values: The value that the client wants to insert.
        dic: A dictionary with resorces and values.
     """
-    
+    create = False 
     resource = resource.split('/')
     resource = resource[1:]
 
@@ -122,30 +95,85 @@ def POSTRequest(conn, resource, values, dic):
     
     if (values != 'NULL'):
         values = values.split('=')
+        values[0] = resource[-1]
 
-    create = createOrEdit(graph, resource, values, dic)
-
-    if(create):
-        dic[graph] = {}
-        dic[graph]['arestas'] = []
-        dic[graph]['pesos'] = {}
-
-    for edge in resource[1:]:
-        dic[graph]['arestas'].append(edge)
-
-    # Is there values to be add?
-    if (values != 'NULL'):
         if (len(values) == 2):
+            if (values[0] not in dic[graph]['pesos']):
+                create = True
             dic[graph]['pesos'][values[0]] = values[1]
+
         else:
             conn.sendall(HTTP204.encode())
             return
+    
+    else:
+        if(graph not in dic):
+            dic[graph] = {}
+            dic[graph]['arestas'] = []
+            dic[graph]['pesos'] = {}
+            create = True
+
+        for edge in resource[1:]:
+            if (edge not in dic[graph]['arestas']):
+                create = True
+            dic[graph]['arestas'].append(edge)
 
     if (create):
         conn.sendall(HTTP201.encode())
 
     else:
         conn.sendall(HTTP200.encode())
+
+def removeAllOccurence(graph, edge, dic):
+    """
+    Remove all occurence of an edge form the dictionary.
+
+    Args:
+       graph: Graph that is going to be removed.
+       edge: Edge that is going to be removed.
+       dic: Where is the information to be removed.
+    """
+    for key in list(dic[graph]['pesos'].keys()):
+        if (edge in key):
+            del(dic[graph]['pesos'][key])
+
+def DELETERequest(conn, resource, dic):
+    """
+    Send a response to a POST request.
+
+    Args:
+       conn: Socket connection. 
+       resource: What the client is trying to reach.
+       dic: A dictionary with resorces and values.
+    """
+    resource = resource.split('/')
+    resource = resource[1:]
+    graph = resource[0]
+
+    # Remove the edge and all its weigth.
+    if(len(resource) == 2):
+        if(resource[1] in dic[graph]['arestas']):
+            index = dic[graph]['arestas'].index(resource[1])
+            del(dic[graph]['arestas'][index])
+            removeAllOccurence(graph, resource[1], dic)
+            conn.sendall(HTTP200.encode())
+
+        else:
+            conn.sendall(HTTP204.encode())
+
+            return
+
+    # Remove all the graph.
+    else:
+        if (graph in dic):
+            del(dic[graph])
+            conn.sendall(HTTP200.encode())
+            
+            return
+
+        else:
+            conn.sendall(HTTP204.encode())
+    
 
 def main():
     # Verify the number of arguments.
@@ -155,7 +183,7 @@ def main():
 
     PORT = int(sys.argv[1])
     CUR_DIR  = '.' if(len(sys.argv) == 2) else sys.argv[2]
-    dic = OrderedDict()
+    dic = {}
 
     print("Starting server on: " + str(PORT) + ".")
     
@@ -179,18 +207,17 @@ def main():
         fullrequest = client.split('\r\n')
         fullrequest = list(filter(None, fullrequest))
         fullrequest = fullrequest[0].split(' ') + fullrequest[1:]
-        print(fullrequest)
 
         if (fullrequest[0] == 'GET'):
             GETRequest(conn, CUR_DIR + fullrequest[1])
 
-        elif (fullrequest[0] == 'POST'):
+        elif (fullrequest[0] == 'POST' or fullrequest[0] == 'PUT'):
             POSTRequest(conn, fullrequest[1], fullrequest[-1], dic)
-            print(json.dumps(dic))
 
-        #elif (fullrequest[0] == 'PUT'):
+        elif (fullrequest[0] == 'DELETE'):
+            DELETERequest(conn, fullrequest[1], dic)
 
-        #elif (fullrequest[0] == 'DELETE'):
+        print(json.dumps(dic))
 
         conn.close()
 
