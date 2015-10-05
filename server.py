@@ -50,15 +50,100 @@ def sendFile(conn, filePath):
     except IOError as err:
         print("Problem during the IO processing.", format(err))
 
+def sendInfoEdge(conn, vertex, dic):
+    """
+    Send all the information about the vertex.
 
-def GETRequest(conn, filePath):
+    Args:
+        conn: Socket connection.
+        vertex: Edge that is going to be printed.
+        dic: Graph dictionary with the information.
+    """
+
+    tempDic = {}
+    tempDic["pesos"] = {}
+    
+    for key, value in list(dic['pesos'].items()):
+        if (vertex in key):
+            tempDic["pesos"][key] = value
+
+
+    # Send the information
+    conn.sendall(HTTP200.encode())
+    conn.sendall(json.dumps(tempDic).encode())
+
+    del(tempDic)
+
+
+def sendGraph(conn, filePath, dic):
+    """
+    Send a graph to the client.
+    
+    Args:
+        conn: Socket connection.
+        filePath: The file requested.
+        dic: Dictionary with the graph.
+    """
+
+    graph = filePath.split('/')[1:]
+
+    # Something inside the graph.
+    if (len(graph) == 2): 
+        if (graph[0] in dic):
+            # Wants all information about that vertex.
+            if (graph[1] in dic[graph[0]]['vertices']):
+                sendInfoEdge(conn, graph[1], dic[graph[0]])
+
+                return True
+                
+
+            # Wants only the weight.
+            elif (graph[1] in dic[graph[0]]['pesos']):
+                message = dic[graph[0]]['pesos'][graph[1]]
+
+                conn.sendall(HTTP200.encode())
+                conn.sendall(json.dumps(message).encode())
+
+                return True
+            
+            else:
+                conn.sendall(HTTP404.encode())
+
+                return False
+
+    
+    # The client wants the hole graph.
+    else:
+        if(graph[0] in dic):
+            conn.sendall(HTTP200.encode())
+            conn.sendall(json.dumps(dic[graph[0]]).encode())
+
+            return True
+
+        else:
+            conn.sendall(HTTP404.encode())
+
+            return False
+
+def GETRequest(conn, filePath, dic):
     """
     Send a response to a GET request.
     
     Args:
         conn: Socket connection.
         filePath: The file requested.
+        dic: Dictionary with the graph.
     """
+    # Is the client trying to access something not allowed?
+    if (filePath.find('..') != -1):
+        conn.sendall(HTTP400.encode())
+        return
+
+    
+    if(sendGraph(conn, filePath, dic)):
+        return
+
+
     if (not(os.path.isfile(filePath))):
         # Try to find default html page.
         filePath += DEFAULT_HTML
@@ -118,14 +203,14 @@ def POSTRequest(conn, resource, values, dic):
         if (edge == -1):
             if(graph not in dic):
                 dic[graph] = {}
-                dic[graph]['arestas'] = []
+                dic[graph]['vertices'] = []
                 dic[graph]['pesos'] = {}
                 create = True
         
             for edge in resource[1:]:
-                if (edge not in dic[graph]['arestas']):
+                if (edge not in dic[graph]['vertices']):
                     create = True
-                    dic[graph]['arestas'].append(edge)
+                    dic[graph]['vertices'].append(edge)
 
     if (create):
         conn.sendall(HTTP201.encode())
@@ -167,17 +252,17 @@ def PUTRequest(conn, resource, values, dic):
     else:
         conn.sendall(HTTP400.encode())
 
-def removeAllOccurence(graph, edge, dic):
+def removeAllOccurence(graph, vertex, dic):
     """
-    Remove all occurence of an edge form the dictionary.
+    Remove all occurence of an vertex form the dictionary.
 
     Args:
        graph: Graph that is going to be removed.
-       edge: Edge that is going to be removed.
+       vertex: Edge that is going to be removed.
        dic: Where is the information to be removed.
     """
     for key in list(dic[graph]['pesos'].keys()):
-        if (edge in key):
+        if (vertex in key):
             del(dic[graph]['pesos'][key])
 
 def DELETERequest(conn, resource, dic):
@@ -194,22 +279,25 @@ def DELETERequest(conn, resource, dic):
     graph = resource[0]
 
     if(len(resource) == 2):
-        # Remove the edge and all its weigth.
-        if(resource[1] in dic[graph]['arestas']):
-            index = dic[graph]['arestas'].index(resource[1])
-            del(dic[graph]['arestas'][index])
+        # Remove the vertex and all its weigth.
+        if(resource[1] in dic[graph]['vertices']):
+            index = dic[graph]['vertices'].index(resource[1])
+            del(dic[graph]['vertices'][index])
             removeAllOccurence(graph, resource[1], dic)
             conn.sendall(HTTP200.encode())
+
+            return 
 
         # Remove just the weigth.
         if (resource[1] in dic[graph]['pesos']):
             del(dic[graph]['pesos'][resource[1]])
             conn.sendall(HTTP200.encode())
 
+            return 
+
         else:
             conn.sendall(HTTP204.encode())
 
-            return
 
     # Remove all the graph.
     else:
@@ -221,6 +309,7 @@ def DELETERequest(conn, resource, dic):
 
         else:
             conn.sendall(HTTP204.encode())
+
     
 
 def main():
@@ -257,7 +346,7 @@ def main():
         fullrequest = fullrequest[0].split(' ') + fullrequest[1:]
 
         if (fullrequest[0] == 'GET'):
-            GETRequest(conn, CUR_DIR + fullrequest[1])
+            GETRequest(conn, CUR_DIR + fullrequest[1], dic)
 
         elif (fullrequest[0] == 'POST'):
             POSTRequest(conn, fullrequest[1], fullrequest[-1], dic)
@@ -267,8 +356,6 @@ def main():
 
         elif (fullrequest[0] == 'DELETE'):
             DELETERequest(conn, fullrequest[1], dic)
-
-        print(json.dumps(dic))
 
         conn.close()
 
