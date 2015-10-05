@@ -52,7 +52,10 @@ def makeRequest(url, method):
     # Does the requet has a place?
     if (indSlash != -1):
         # Location.
-        request.append(url[indSlash:qMark] + ' ')
+        if(qMark != -1):
+            request.append(url[indSlash:qMark] + ' ')
+        else:
+            request.append(url[indSlash:] + ' ')
         request.append(PROTOCOL)
         # Host
         request.append(url[:indSlash])
@@ -181,9 +184,6 @@ def main():
     
     request = ''.join(req[:-1])
 
-
-    # VERIFY REQUEST
-    print(request)
 
     try:
         sock.connect((req[3], port))
