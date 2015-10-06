@@ -11,6 +11,7 @@ import socket
 import sys
 import os.path 
 import json
+import select
 
 HOST = '127.0.0.1'
 PORT = 0
@@ -321,6 +322,7 @@ def main():
     PORT = int(sys.argv[1])
     CUR_DIR  = '.' if(len(sys.argv) == 2) else sys.argv[2]
     dic = {}
+    sockets = []
 
     print("Starting server on: " + str(PORT) + ".")
     
@@ -329,36 +331,53 @@ def main():
     # Tells the kernel to reuse the socket.
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind((HOST, PORT))
-    sock.listen(1)
+    sock.listen(5)
+
+    sockets.append(sock)
 
 
     while True:
-        conn, addr = sock.accept()
-        client = (conn.recv(BUFFER)).decode('utf-8')
+        try:
+            inputR, outputR, exceptR = select.select(sockets, [], [])
+        except select.error as err:
+            print("Something happened! Error: ", err) 
 
-        # Doing this we have an array with the requisitation.
-        # [0] => HTTP Method.
-        # [1] => File requisitation.
-        # [2] => HTTP version.
-        # ...
-        fullrequest = client.split('\r\n')
-        fullrequest = list(filter(None, fullrequest))
-        fullrequest = fullrequest[0].split(' ') + fullrequest[1:]
+        for newSock in sockets:
+            try:
+                if newSock == sock:
+                    conn, addr = sock.accept()
+                    sockets.append(conn)
 
-        if (fullrequest[0] == 'GET'):
-            GETRequest(conn, CUR_DIR + fullrequest[1], dic)
+                else:
 
-        elif (fullrequest[0] == 'POST'):
-            POSTRequest(conn, fullrequest[1], fullrequest[-1], dic)
+                    client = (newSock.recv(BUFFER)).decode('utf-8')
 
-        elif (fullrequest[0] == 'PUT'):
-            PUTRequest(conn, fullrequest[1], fullrequest[-1], dic)
+                    # Doing this we have an array with the requisitation.
+                    # [0] => HTTP Method.
+                    # [1] => File requisitation.
+                    # [2] => HTTP version.
+                    # ...
+                    fullrequest = client.split('\r\n')
+                    fullrequest = list(filter(None, fullrequest))
+                    fullrequest = fullrequest[0].split(' ') + fullrequest[1:]
 
-        elif (fullrequest[0] == 'DELETE'):
-            DELETERequest(conn, fullrequest[1], dic)
+                    if (fullrequest[0] == 'GET'):
+                        GETRequest(newSock, CUR_DIR + fullrequest[1], dic)
 
-        conn.close()
+                    elif (fullrequest[0] == 'POST'):
+                        POSTRequest(newSock, fullrequest[1], fullrequest[-1], dic)
 
+                    elif (fullrequest[0] == 'PUT'):
+                        PUTRequest(newSock, fullrequest[1], fullrequest[-1], dic)
+
+                    elif (fullrequest[0] == 'DELETE'):
+                        DELETERequest(newSock, fullrequest[1], dic)
+
+                    newSock.close()
+                    sockets.remove(newSock)
+
+            except socket.error as err:
+                print("Something happened! Error: ", err)
 
 if __name__ == "__main__":
     main()
